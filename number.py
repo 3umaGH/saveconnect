@@ -34,7 +34,11 @@ from .const import (
     KEY_BOOST_REFRESH,
     KEY_TEMPERATURE_SETPOINT,
     KEY_UNKNOWN_16100,
+    KEY_USER_MODE_ACTIVE,
+    KEY_USER_MODE_REQUEST,
     MODE_WRITE_BUNDLE_KEYS,
+    REQUEST_USER_MODES,
+    STATUS_USER_MODES,
 )
 from .coordinator import SaveConnectCoordinator
 
@@ -156,6 +160,17 @@ class SaveConnectNumber(CoordinatorEntity[SaveConnectCoordinator], NumberEntity)
             payload = {
                 key: self.coordinator.data.get(key, 0) for key in MODE_WRITE_BUNDLE_KEYS
             }
+            # 1161 is a write-only "request" register - it does not track the
+            # currently active mode, it just echoes back the last mode we (or
+            # a timed boost) requested. Re-sending that stale raw value here
+            # would re-trigger whatever mode was last requested (e.g. Refresh
+            # after a boost expires), even though this write isn't changing
+            # the mode at all. Derive the "no change" value from the actual
+            # active status register (1160) instead.
+            active_status = self.coordinator.data.get(KEY_USER_MODE_ACTIVE)
+            active_label = STATUS_USER_MODES.get(active_status)
+            if active_label is not None and active_label in REQUEST_USER_MODES:
+                payload[KEY_USER_MODE_REQUEST] = REQUEST_USER_MODES[active_label]
             payload[KEY_UNKNOWN_16100] = 0
             payload[self.entity_description.register_key] = raw_value
         else:
